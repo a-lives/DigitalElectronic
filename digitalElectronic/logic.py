@@ -13,7 +13,7 @@ class Operator(StrEnum):
     NOT = "'"
 
 
-# TODO not
+# TODO 添加对 1 0 True False 等的运算支持
 class LogicExp:
     def __init__(self, *vars: LogicType, op: Operator):
         self.vars = vars
@@ -142,7 +142,9 @@ class LogicVar(LogicExp):
 
     def __str__(self):
         return self.name
-
+    
+ONE = LogicVar("1",True)
+ZERO = LogicVar("0",False)
 
 def symbols(names: str) -> t.Tuple[LogicVar]:
     results = []
