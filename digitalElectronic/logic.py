@@ -19,6 +19,7 @@ class LogicExp:
     def __init__(self, *vars: LogicType, op: Operator):
         self.vars = vars
         self.op = op
+        self.name = None
         # 简单整理式子
         if not self.op in (Operator.NOT, None):
             newvars = []
@@ -130,18 +131,28 @@ class LogicExp:
             return self.op.value.join(
                 (
                     str(var)
-                    if var.op in (Operator.AND,Operator.NOT,None)
+                    if var.op in (Operator.AND, Operator.NOT, None)
                     else "(" + str(var) + ")"
                 )
                 for var in self.vars
             )
+    
+    def __hash__(self):
+        return hash(self.__str__())
+    
+    def is_(self,other:LogicType) -> bool:
+        return hash(self) == hash(other)
+    
+    def in_(self,others:tuple) -> bool:
+        return bool(sum(self.is_(other) for other in others))
 
     def simplify(self) -> "LogicExp":
         # TODO 实现化简
         pass
 
-    def subs(self,table:dict["LogicVar",bool]) -> bool:
-        if self.op is None:
+    def subs(self, table: dict[LogicType, bool]) -> bool:
+        if self.in_(table.keys()):
+            assert not self.name is None
             return table[self]
         elif self.op is Operator.AND:
             result = 1
@@ -160,23 +171,44 @@ class LogicExp:
             for var in self.vars[1:]:
                 result = result ^ var.subs(table)
             return result
-        else:
+        elif self.op is Operator.XNOR:
             result = self.vars[0]
             for var in self.vars[1:]:
                 result = not (result ^ var.subs(table))
             return result
-        
-    def get_truth_table(self,vars:t.Tuple["LogicVar"],output_name="Y") -> pd.DataFrame:
-        dic = {var.name : [] for var in vars}
+        else:
+            # TODO 问题处理
+            return None
+
+    def get_truth_table(
+        self, vars: t.Tuple[LogicType], output_name="Y"
+    ) -> pd.DataFrame:
+        dic = {var.name: [] for var in vars}
         dic[output_name] = []
-        for i in range(2**len(vars)):
+        for i in range(2 ** len(vars)):
             for j in range(len(vars)):
-                dic[vars[j].name].append((i>>j)%2)
-            dic[output_name].append(int(self.subs({vars[j]:(i>>j)%2 for j in range(len(vars))})))
+                dic[vars[j].name].append((i >> j) % 2)
+            dic[output_name].append(
+                int(self.subs({vars[j]: (i >> j) % 2 for j in range(len(vars))}))
+            )
         df = pd.DataFrame(dic)
         return df
-        
-        
+
+    def minterms(self,vars: t.Tuple[LogicType]) -> t.Tuple["LogicExp"]:
+        # TODO 输出最小项
+        truth_table = self.get_truth_table(vars)
+        minterms = []
+        for i in range(2 ** len(vars)):
+            if truth_table["Y"][i]:
+                temp_vars = []
+                for var in vars:
+                    if truth_table.loc[i,var.name]:
+                        temp_vars.append(var)
+                    else:
+                        temp_vars.append(LogicExp(var,op=Operator.NOT))
+                minterms.append(LogicExp(*temp_vars,op=Operator.AND))
+        return tuple(minterms)
+
 
 class LogicVar(LogicExp):
     def __init__(self, name: str, value: bool = None):
@@ -187,9 +219,6 @@ class LogicVar(LogicExp):
 
     def __str__(self):
         return self.name
-    
-    def __hash__(self):
-        return hash(self.name)
 
 
 ONE = LogicVar("1", True)
