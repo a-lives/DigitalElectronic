@@ -1,9 +1,7 @@
 from abc import ABC, abstractmethod
 import typing as t
+import warnings
 from .logic import LogicExp, Operator
-
-Input: t.TypeAlias = t.Union[LogicExp, "Gate"]
-
 
 # 用来可视化的节点
 class Node:
@@ -35,18 +33,32 @@ class Graph:
 # TODO 实现重建图功能，目前建图不可更改
 
 
-class Gate(ABC, Node):
+class Device(ABC,Node):
     def __init__(self):
         super().__init__()
-
-    # TODO 这里应该能返回一个图
-    def __call__(self, *inputs: Input):
-        self.inputs = [(inp if isinstance(inp,LogicExp) else inp.output) for inp in inputs]
-
+        self.inputs = None
+        
+    def __call__(self, *args, **kwargs):
+        self.inputs = args,kwargs
+        return self.forward(*args,**kwargs)
+    
     # 输出
     @property
     def output(self):
-        return self.forward(*self.inputs)
+        return self.forward(*self.inputs[0],**self.inputs[1])
+    
+    @classmethod
+    def build(cls,num:int,*args,**kwds):
+        assert num > 0
+        return [cls(*args,**kwds) for _ in range(num)]
+
+    @abstractmethod
+    def forward(self, *x: LogicExp):
+        raise NotImplementedError("Deivce method has no implement")
+
+class Gate(Device):
+    def __init__(self):
+        super().__init__()
 
     # 操作符
     @property
@@ -54,7 +66,7 @@ class Gate(ABC, Node):
     def op(self):
         raise NotImplementedError("gate property operator has not implement!")
 
-    def forward(self, *x: Input):
+    def forward(self, *x: LogicExp) -> LogicExp:
         return LogicExp(*x, op=self.op)
 
 
@@ -130,3 +142,15 @@ class ORNOTgate(Gate):
     
     def forward(self, *x):
         return LogicExp(LogicExp(*x,op=Operator.OR),op=self.op)
+    
+    
+# 传输门
+class TransmissionGate(Device):
+    # ouput = x*c + x*~c0
+    def __init__(self):
+        super().__init__()
+        
+    def forward(self,x:LogicExp,c:LogicExp,c0:LogicExp):
+        if not (~c).is_(c0) or (c).is_(~c0):
+            warnings.warn("The two control ends c and c0 of the transmission gate should be opposite")
+        return x*c + x*~c0

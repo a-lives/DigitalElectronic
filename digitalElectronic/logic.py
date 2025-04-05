@@ -20,6 +20,7 @@ class LogicExp:
         self.vars = vars
         self.op = op
         self.name = None
+        self.value = None
         # 简单整理式子
         if not self.op in (Operator.NOT, None):
             newvars = []
@@ -154,6 +155,8 @@ class LogicExp:
         if self.in_(table.keys()):
             assert not self.name is None
             return table[self]
+        elif not self.value is None:
+            return self.value
         elif self.op is Operator.AND:
             result = 1
             for var in self.vars:

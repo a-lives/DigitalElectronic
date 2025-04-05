@@ -1,10 +1,36 @@
 __author__ = "a-lives"
 __version__ = "1.0.0"
 
-from . import gate,logic
+from . import device, logic
 
-__all__ = ["gate","logic","LogicExp","symbols","Gate","ANDgate","ORgate","NOTgate","XNORgate","XORgate","ANDNOTgate","ORNOTgate"]
+__all__ = [
+    "device",
+    "logic",
+    "LogicExp",
+    "symbols",
+    "Device",
+    "Gate",
+    "ANDgate",
+    "ORgate",
+    "NOTgate",
+    "XNORgate",
+    "XORgate",
+    "ANDNOTgate",
+    "ORNOTgate",
+    "TransmissionGate",
+]
 
 
-from .logic import LogicExp,symbols
-from .gate import Gate,ANDgate,ORgate,NOTgate,XNORgate,XORgate,ANDNOTgate,ORNOTgate
+from .logic import LogicExp, symbols
+from .device import (
+    Device,
+    Gate,
+    ANDgate,
+    ORgate,
+    NOTgate,
+    XNORgate,
+    XORgate,
+    ANDNOTgate,
+    ORNOTgate,
+    TransmissionGate,
+)
