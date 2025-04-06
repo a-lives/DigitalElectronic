@@ -17,10 +17,11 @@ class Operator(StrEnum):
 # TODO 添加对 1 0 True False 等的运算支持
 class LogicExp:
     def __init__(self, *vars: LogicType, op: Operator):
-        self.vars = vars
-        self.op = op
-        self.name = None
-        self.value = None
+        self.vars = vars                            # 变量
+        self.op = op                                # 操作符
+        self.name = None                            # 名称
+        self.value = None                           # 值
+        self.port : t.Tuple["Device",int] = None    # 设备以及端口号，如果该表达式从device中出来
         # 简单整理式子
         if not self.op in (Operator.NOT, None):
             newvars = []
@@ -183,6 +184,7 @@ class LogicExp:
             # TODO 问题处理
             return None
 
+    # 获取真值表
     def get_truth_table(
         self, vars: t.Tuple[LogicType], output_name="Y"
     ) -> pd.DataFrame:
@@ -197,6 +199,7 @@ class LogicExp:
         df = pd.DataFrame(dic)
         return df
 
+    # 获取最小项
     def minterms(self,vars: t.Tuple[LogicType]) -> t.Tuple["LogicExp"]:
         # TODO 输出最小项
         truth_table = self.get_truth_table(vars)
@@ -213,6 +216,7 @@ class LogicExp:
         return tuple(minterms)
 
 
+# 逻辑变量
 class LogicVar(LogicExp):
     def __init__(self, name: str, value: bool = None):
         super().__init__(op=None)
@@ -228,6 +232,7 @@ ONE = LogicVar("1", True)
 ZERO = LogicVar("0", False)
 
 
+# 获取逻辑变量
 def symbols(names: str) -> t.Tuple[LogicVar]:
     results = []
     for name in names.split(" "):
