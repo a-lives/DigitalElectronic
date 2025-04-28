@@ -18,6 +18,9 @@ __all__ = [
     "ANDNOTgate",
     "ORNOTgate",
     "TransmissionGate",
+    "get_wave_fig",
+    "draw_dashlines",
+    "tab2func"
 ]
 
 
@@ -34,3 +37,4 @@ from .device import (
     ORNOTgate,
     TransmissionGate,
 )
+from .utils import get_wave_fig, draw_dashlines, tab2func

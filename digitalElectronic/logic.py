@@ -28,7 +28,7 @@ class LogicExp:
         if not self.op in (Operator.NOT, None):
             newvars = []
             for var in vars:
-                if var.op is self.op:
+                if var.op is self.op and var.port is None:      # 防止化简破环端口映射
                     newvars.extend(var.vars)
                 else:
                     newvars.append(var)
@@ -203,7 +203,6 @@ class LogicExp:
 
     # 获取最小项
     def minterms(self, vars: t.Tuple[LogicType]) -> t.Tuple["LogicExp"]:
-        # TODO 输出最小项
         truth_table = self.get_truth_table(vars)
         minterms = []
         for i in range(2 ** len(vars)):

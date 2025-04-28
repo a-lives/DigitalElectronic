@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import typing as t
 import warnings
 
+import numpy as np
 import manim
 from manim import (
     VGroup,
@@ -18,8 +19,8 @@ from manim import (
 from manim import LEFT, RIGHT, UP, DOWN, UL, DL, UR, DR, ORIGIN
 import manim.utils.color as C
 
-from .logic import LogicExp, Operator
-
+from .logic import LogicExp, LogicVar, Operator,symbols
+from .utils import get_wave_fig,draw_dashlines
 
 # 用来可视化的网格图
 class Graph(VGroup):
@@ -33,10 +34,14 @@ class Graph(VGroup):
 提供注册与删除注册方法
 网格包含原件表，原件表内包含注册节点信息
 
-布线规则：
+走线规则：
 走线只能纵横
 线距限制
 吸附网格
+不能穿过器件
+
+自动走线：
+建立打分机制，通过贪心算法与广度优先搜索结合寻找解
 
 元件分布规则：
 从输入到输出按层级分
@@ -46,6 +51,7 @@ class Graph(VGroup):
 
 
 # TODO 实现端口映射
+# TODO 实现文本标记添加
 class Device(ABC):
     def __init__(self):
         super().__init__()
@@ -93,6 +99,9 @@ class Device(ABC):
     @abstractmethod
     def forward(self, *args, **kwargs):
         pass
+
+    def draw_wave(self, *inputs: t.Callable) -> t.Tuple[t.Sequence[float]]:
+        raise NotImplementedError("Deivce method draw_wave has no implement")
 
 
 class Gate(Device):
@@ -239,16 +248,12 @@ class XNORgate(Gate):
 
 
 # 与非门
-class ANDNOTgate(Gate):
+class ANDNOTgate(Device):
     def __init__(self):
         super().__init__()
 
-    @property
-    def op(self):
-        return Operator.NOT
-
     def forward(self, *x):
-        return LogicExp(LogicExp(*x, op=Operator.AND), op=self.op)
+        return ~LogicExp(*x, op=Operator.AND)
 
     def visualize(self, color: C.ManimColor = C.BLUE_C, scale: float = 1) -> VGroup:
         rect = Rectangle(width=1.6, height=2, color=color).move_to(ORIGIN)
@@ -262,16 +267,12 @@ class ANDNOTgate(Gate):
 
 
 # 或非门
-class ORNOTgate(Gate):
+class ORNOTgate(Device):
     def __init__(self):
         super().__init__()
 
-    @property
-    def op(self):
-        return Operator.NOT
-
     def forward(self, *x):
-        return LogicExp(LogicExp(*x, op=Operator.OR), op=self.op)
+        return ~LogicExp(*x, op=Operator.OR)
 
     def visualize(self, color: C.ManimColor = C.BLUE_C, scale: float = 1) -> VGroup:
         # rect = Square(side_length=2,color=color)
@@ -289,10 +290,28 @@ class ORNOTgate(Gate):
         return obj3.scale(scale)
 
 
+class SimpleNOTGate(Device):
+    def __init__(self, work: bool = False):
+        super().__init__()
+        self.work = work  # 起标记作用时不工作
+
+    def __call__(self, x):
+        self.inputs = x
+        self.outputs = self.forward(x)
+        self.outputs.port = self.inputs.port  # 简单小圈圈非门不改变port
+        return self.outputs
+
+    def forward(self, x):
+        return ~x if self.work else x
+
+    def visualize(self, color: C.ManimColor = C.BLUE_C, scale: float = 1) -> VMobject:
+        circle = Circle(radius=0.1, color=color)
+        return circle.scale(scale)
+
+
 # 传输门
 class TransmissionGate(Device):
-    # ouput = x*c + x*~c0
-    order = 0
+    order = 0  # 器件编号
 
     def __init__(self, order: int = None):
         super().__init__()
@@ -312,3 +331,141 @@ class TransmissionGate(Device):
         text = MathTex(f"TG_{self.order}").move_to(rect.get_center())
         circle.shift(UP * 1.1)
         return VGroup(rect, circle, text).scale(scale)
+
+
+# TODO 对方形芯片的基类进行实现
+# 要方便实现引脚名称标记，低电平有效标记
+class Chip(Device):
+    # 各种方形芯片的基类
+    def __init__(self):
+        super().__init__()
+
+
+# TODO 实现时序逻辑电路
+
+
+class TODevice(Device):
+    def __init__(self):
+        super().__init__()
+    
+
+class SRLatch(Device):
+    # 或非门SR锁存器
+    order = 0
+
+    def __init__(self, order: int = None, Q_value: bool = False, Qi_value = True):
+        super().__init__()
+        self.order = order if order else SRLatch.order
+        SRLatch.order = self.order + 1
+        self.q = LogicVar(f"[SRLatch{self.order}]Q", value=Q_value)
+        self.qi = LogicVar(f"[SRLatch{self.order}]Q'", value=Qi_value)
+
+    def forward(self, s: LogicExp, r: LogicExp):
+        return ~(r+self.qi),~(s+self.q)
+    
+    def update(self,q,qi):
+        self.q.value = q
+        self.qi.value = qi
+    
+    
+class SRLatch_AN(Device):
+    # 与非门SR锁存器
+    order = 0
+
+    def __init__(self, order: int = None, Q_value: bool = False, Qi_value = True):
+        super().__init__()
+        self.order = order if order else SRLatch_AN.order
+        SRLatch_AN.order = self.order + 1
+        self.q = LogicVar(f"[SRLatch_AN{self.order}]Q", value=Q_value)
+        self.qi = LogicVar(f"[SRLatch_AN{self.order}]Q'", value=Qi_value)
+
+    def forward(self, s: LogicExp, r: LogicExp):
+        return ~(s*self.qi),~(r*self.q)
+    
+    def update(self,q,qi):
+        self.q.value = q
+        self.qi.value = qi
+
+ 
+class SRFF(Device):
+    # 与非门SR触发器
+    order = 0
+
+    def __init__(self, order: int = None, Q_value: bool = False, Qi_value = True):
+        super().__init__()
+        self.order = order if order else SRFF.order
+        SRFF.order = self.order + 1
+        self.q = LogicVar(f"[SRFF{self.order}]Q", value=Q_value)
+        self.qi = LogicVar(f"[SRFF{self.order}]Q'", value=Qi_value)
+
+    def forward(self, s: LogicExp, r: LogicExp, clk: LogicExp):
+        return ~((~(s*clk))*self.qi),~((~(r*clk))*self.q)
+    
+    def update(self,q,qi):
+        self.q.value = q
+        self.qi.value = qi
+   
+ 
+class SRFF_P(Device):
+    # 与非门SR脉冲触发器
+    order = 0
+
+    def __init__(self, order: int = None, Q_value: bool = False, Qi_value = True):
+        super().__init__()
+        self.order = order if order else SRFF_P.order
+        SRFF_P.order = self.order + 1
+        self.SRFF1 = SRFF()
+        self.SRFF2 = SRFF(Q_value=Q_value,Qi_value=Qi_value)
+
+    def forward(self, s: LogicExp, r: LogicExp, clk: LogicExp):
+        Q1,Q1i = self.SRFF1(s,r,clk)
+        Q2,Q2i = self.SRFF1(Q1,Q1i,~clk)
+        return Q1,Q1i,Q2,Q2i
+
+    def update(self,q1,q1i,q2,q2i):
+        self.SRFF1.update(q1,q1i)
+        self.SRFF2.update(q2,q2i)
+    
+class JKFF(Device):
+    order = 0
+
+    def __init__(self, order: int = None):
+        super().__init__()
+        self.order = order if order else JKFF.order
+        JKFF.order = self.order + 1
+        self.SRFF1 = SRFF()
+        self.SRFF2 = SRFF()
+
+    def forward(self, j: LogicExp, k: LogicExp, clk: LogicExp,):
+        Q1,Q1i = self.SRFF1(j*self.SRFF2.qi,k*self.SRFF2.q,clk)
+        Q2,Q2i = self.SRFF2(Q1,Q1i,~clk)
+        return Q1,Q1i,Q2,Q2i
+    
+    def update(self,q1,q1i,q2,q2i):
+        self.SRFF1.update(q1,q1i)
+        self.SRFF2.update(q2,q2i)
+    
+    @classmethod
+    def draw_wave(cls,t_range,j:t.Callable[[float],bool],k:t.Callable[[float],bool],clk:t.Callable[[float],bool]):
+        J,K,CLK = symbols('J K CLK')
+        jkff = cls()
+        x = np.arange(*t_range).tolist()
+        Q1,Q1i,Q2,Q2i = jkff(J,K,CLK)
+        Q1:LogicExp
+        Q1i:LogicExp
+        Q2:LogicExp
+        Q2i:LogicExp
+        Q_box = []
+        Qi_box = []
+        q1,q1i,q2,q2i = False,True,False,True
+        for t in x:
+            q1 = Q1.subs({J:j(t),K:k(t),CLK:clk(t)})
+            q1i = Q1i.subs({J:j(t),K:k(t),CLK:clk(t)})
+            q2 = Q2.subs({J:j(t),K:k(t),CLK:clk(t)})
+            q2i = Q2i.subs({J:j(t),K:k(t),CLK:clk(t)})
+            
+            jkff.update(q1,q1i,q2,q2i)
+
+            Q_box.append(int(q2))
+            Qi_box.append(int(q2i))
+        return x,Q_box,Qi_box
