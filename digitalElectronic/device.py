@@ -19,8 +19,8 @@ from manim import (
 from manim import LEFT, RIGHT, UP, DOWN, UL, DL, UR, DR, ORIGIN
 import manim.utils.color as C
 
-from .logic import LogicExp, LogicVar, Operator,symbols
-from .utils import get_wave_fig,draw_dashlines
+from .logic import LogicExp, LogicVar, Operator, symbols
+
 
 # 用来可视化的网格图
 class Graph(VGroup):
@@ -58,6 +58,7 @@ class Device(ABC):
         self.inputs = None
         self.outputs = None
 
+    # TODO 端口输入输出序号合并
     @property
     def input_ports(self) -> int:
         raise NotImplementedError("Deivce property input_ports has no implement")
@@ -100,7 +101,7 @@ class Device(ABC):
     def forward(self, *args, **kwargs):
         pass
 
-    def draw_wave(self, *inputs: t.Callable) -> t.Tuple[t.Sequence[float]]:
+    def sample_wave(self, *inputs: t.Callable) -> t.Tuple[t.Sequence[float]]:
         raise NotImplementedError("Deivce method draw_wave has no implement")
 
 
@@ -341,92 +342,122 @@ class Chip(Device):
         super().__init__()
 
 
-# TODO 实现时序逻辑电路
+# TODO 完善时序逻辑电路
 
-
-class TODevice(Device):
+class SDevice(Device):
     def __init__(self):
         super().__init__()
-    
 
-class SRLatch(Device):
+    @property
+    def states(self) -> t.Tuple[LogicVar]:
+        raise NotImplementedError()
+
+    def state_exps(self, *inputs: LogicExp) -> t.Tuple[LogicExp]:
+        raise NotImplementedError()
+
+    def update(self, table: t.Dict[LogicExp, bool]):
+        for state, value in table.items():
+            state.value = value
+
+
+class SRLatch(SDevice):
     # 或非门SR锁存器
     order = 0
 
-    def __init__(self, order: int = None, Q_value: bool = False, Qi_value = True):
+    def __init__(self, order: int = None, Q_value: bool = False, Qi_value=True):
         super().__init__()
         self.order = order if order else SRLatch.order
         SRLatch.order = self.order + 1
         self.q = LogicVar(f"[SRLatch{self.order}]Q", value=Q_value)
         self.qi = LogicVar(f"[SRLatch{self.order}]Q'", value=Qi_value)
 
+    @property
+    def states(self):
+        return self.q, self.qi
+
+    def state_exps(self, s: LogicExp, r: LogicExp):
+        return ~(r + self.qi), ~(s + self.q)
+
     def forward(self, s: LogicExp, r: LogicExp):
-        return ~(r+self.qi),~(s+self.q)
-    
-    def update(self,q,qi):
-        self.q.value = q
-        self.qi.value = qi
-    
-    
-class SRLatch_AN(Device):
+        return ~(r + self.qi), ~(s + self.q)
+
+
+class SRLatch_AN(SDevice):
     # 与非门SR锁存器
     order = 0
 
-    def __init__(self, order: int = None, Q_value: bool = False, Qi_value = True):
+    def __init__(self, order: int = None, Q_value: bool = False, Qi_value=True):
         super().__init__()
         self.order = order if order else SRLatch_AN.order
         SRLatch_AN.order = self.order + 1
         self.q = LogicVar(f"[SRLatch_AN{self.order}]Q", value=Q_value)
         self.qi = LogicVar(f"[SRLatch_AN{self.order}]Q'", value=Qi_value)
 
-    def forward(self, s: LogicExp, r: LogicExp):
-        return ~(s*self.qi),~(r*self.q)
-    
-    def update(self,q,qi):
-        self.q.value = q
-        self.qi.value = qi
+    @property
+    def states(self):
+        return self.q, self.qi
 
- 
-class SRFF(Device):
+    def state_exps(self, s: LogicExp, r: LogicExp):
+        return ~(s * self.qi), ~(r * self.q)
+
+    def forward(self, s: LogicExp, r: LogicExp):
+        return ~(s * self.qi), ~(r * self.q)
+
+
+class SRFF(SDevice):
     # 与非门SR触发器
     order = 0
 
-    def __init__(self, order: int = None, Q_value: bool = False, Qi_value = True):
+    def __init__(self, order: int = None, Q_value: bool = False, Qi_value=True):
         super().__init__()
         self.order = order if order else SRFF.order
         SRFF.order = self.order + 1
         self.q = LogicVar(f"[SRFF{self.order}]Q", value=Q_value)
         self.qi = LogicVar(f"[SRFF{self.order}]Q'", value=Qi_value)
 
+    @property
+    def states(self):
+        return self.q, self.qi
+
+    def state_exps(self, s: LogicExp, r: LogicExp, clk: LogicExp):
+        return ~((~(s * clk)) * self.qi), ~((~(r * clk)) * self.q)
+
     def forward(self, s: LogicExp, r: LogicExp, clk: LogicExp):
-        return ~((~(s*clk))*self.qi),~((~(r*clk))*self.q)
-    
-    def update(self,q,qi):
-        self.q.value = q
-        self.qi.value = qi
-   
- 
-class SRFF_P(Device):
+        return ~((~(s * clk)) * self.qi), ~((~(r * clk)) * self.q)
+
+
+class SRFF_P(SDevice):
     # 与非门SR脉冲触发器
     order = 0
 
-    def __init__(self, order: int = None, Q_value: bool = False, Qi_value = True):
+    def __init__(self, order: int = None, Q_value: bool = False, Qi_value=True):
         super().__init__()
         self.order = order if order else SRFF_P.order
         SRFF_P.order = self.order + 1
         self.SRFF1 = SRFF()
-        self.SRFF2 = SRFF(Q_value=Q_value,Qi_value=Qi_value)
+        self.SRFF2 = SRFF(Q_value=Q_value, Qi_value=Qi_value)
+
+    @property
+    def states(self):
+        return self.q, self.qi
+
+    def state_exps(
+        self,
+        s: LogicExp,
+        r: LogicExp,
+        clk: LogicExp,
+    ):
+        Q1, Q1i = self.SRFF1(s, r, clk)
+        Q2, Q2i = self.SRFF2(Q1, Q1i, ~clk)
+        return Q1, Q1i, Q2, Q2i
 
     def forward(self, s: LogicExp, r: LogicExp, clk: LogicExp):
-        Q1,Q1i = self.SRFF1(s,r,clk)
-        Q2,Q2i = self.SRFF1(Q1,Q1i,~clk)
-        return Q1,Q1i,Q2,Q2i
+        Q1, Q1i = self.SRFF1(s, r, clk)
+        Q2, Q2i = self.SRFF1(Q1, Q1i, ~clk)
+        return Q2, Q2i
 
-    def update(self,q1,q1i,q2,q2i):
-        self.SRFF1.update(q1,q1i)
-        self.SRFF2.update(q2,q2i)
-    
-class JKFF(Device):
+
+class JKFF(SDevice):
     order = 0
 
     def __init__(self, order: int = None):
@@ -436,36 +467,78 @@ class JKFF(Device):
         self.SRFF1 = SRFF()
         self.SRFF2 = SRFF()
 
-    def forward(self, j: LogicExp, k: LogicExp, clk: LogicExp,):
-        Q1,Q1i = self.SRFF1(j*self.SRFF2.qi,k*self.SRFF2.q,clk)
-        Q2,Q2i = self.SRFF2(Q1,Q1i,~clk)
-        return Q1,Q1i,Q2,Q2i
-    
-    def update(self,q1,q1i,q2,q2i):
-        self.SRFF1.update(q1,q1i)
-        self.SRFF2.update(q2,q2i)
-    
-    @classmethod
-    def draw_wave(cls,t_range,j:t.Callable[[float],bool],k:t.Callable[[float],bool],clk:t.Callable[[float],bool]):
-        J,K,CLK = symbols('J K CLK')
-        jkff = cls()
-        x = np.arange(*t_range).tolist()
-        Q1,Q1i,Q2,Q2i = jkff(J,K,CLK)
-        Q1:LogicExp
-        Q1i:LogicExp
-        Q2:LogicExp
-        Q2i:LogicExp
-        Q_box = []
-        Qi_box = []
-        q1,q1i,q2,q2i = False,True,False,True
-        for t in x:
-            q1 = Q1.subs({J:j(t),K:k(t),CLK:clk(t)})
-            q1i = Q1i.subs({J:j(t),K:k(t),CLK:clk(t)})
-            q2 = Q2.subs({J:j(t),K:k(t),CLK:clk(t)})
-            q2i = Q2i.subs({J:j(t),K:k(t),CLK:clk(t)})
-            
-            jkff.update(q1,q1i,q2,q2i)
+    @property
+    def states(self):
+        return *self.SRFF1.states, *self.SRFF2.states
 
-            Q_box.append(int(q2))
-            Qi_box.append(int(q2i))
-        return x,Q_box,Qi_box
+    def state_exps(
+        self,
+        j: LogicExp,
+        k: LogicExp,
+        clk: LogicExp,
+    ):
+        Q1, Q1i = self.SRFF1(j * self.SRFF2.qi, k * self.SRFF2.q, clk)
+        Q2, Q2i = self.SRFF2(Q1, Q1i, ~clk)
+        return Q1, Q1i, Q2, Q2i
+
+    def forward(
+        self,
+        j: LogicExp,
+        k: LogicExp,
+        clk: LogicExp,
+    ):
+        Q1, Q1i = self.SRFF1(j * self.SRFF2.qi, k * self.SRFF2.q, clk)
+        Q2, Q2i = self.SRFF2(Q1, Q1i, ~clk)
+        return Q2, Q2i
+
+    @classmethod
+    def sample_wave(
+        cls,
+        t_range,
+        j: t.Callable[[float], bool],
+        k: t.Callable[[float], bool],
+        clk: t.Callable[[float], bool],
+    ):
+        J, K, CLK = symbols("J K CLK")
+        x = np.arange(*t_range).tolist()
+        outputs = sample_wave_seq(cls, x, {J: j, K: k, CLK: clk})
+        return x, *outputs
+
+
+def sample_wave(
+    device_type: type[Device],
+    time_seq: t.Sequence[float],
+    table: t.Dict[LogicExp, t.Callable[[float], bool]],
+) -> t.List[t.List[bool]]:
+    syms = table.keys()
+    device = device_type()
+    outputs: t.Tuple[LogicExp] = device(*syms)
+    output_box = [[] for i in range(len(outputs))]
+    for t_ in time_seq:
+        inputs = {sym: func(t_) for sym, func in table.items()}
+        for i, output in enumerate(outputs):
+            output_box[i].append(output.subs(inputs))
+    return output_box
+
+
+def sample_wave_seq(
+    device_type: type[SDevice],
+    time_seq: t.Sequence[float],
+    table: t.Dict[LogicExp, t.Callable[[float], bool]],
+) -> t.List[t.List[bool]]:
+    syms = table.keys()
+    device = device_type()
+    outputs: t.Tuple[LogicExp] = device(*syms)
+    output_box = [[] for _ in range(len(outputs))]
+    for t_ in time_seq:
+        # 输出
+        inputs = {sym: func(t_) for sym, func in table.items()}
+        for i, output in enumerate(outputs):
+            output_box[i].append(output.subs(inputs))
+
+        # 状态
+        state_values = [state.subs(inputs) for state in device.state_exps(*syms)]
+        device.update(
+            {state: value for state, value in zip(device.states, state_values)}
+        )
+    return output_box
